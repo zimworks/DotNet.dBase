@@ -20,6 +20,11 @@ public class DbfField : IEquatable<DbfField>
     public DbfFieldType Type { get; set; }
 
     /// <summary>
+    /// Offset of field from beginning of record
+    /// </summary>
+    public byte[] Offset { get; set; }
+
+    /// <summary>
     /// Length of field in characters/bytes
     /// </summary>
     public byte Length { get; set; }
@@ -83,7 +88,8 @@ public class DbfField : IEquatable<DbfField>
         var rawName = encoding.GetString(reader.ReadBytes(11));
         Name = rawName.Split((char)0)[0];
         Type = (DbfFieldType)reader.ReadByte();
-        reader.ReadBytes(4); // reserved: Field data address in memory.
+        //reader.ReadBytes(4); // reserved: Field data address in memory.
+        Offset = reader.ReadBytes(4); // FoxPro: offset of field from beginning of record.
         Length = reader.ReadByte();
         Precision = reader.ReadByte();
         reader.ReadBytes(2); // reserved.
@@ -112,7 +118,8 @@ public class DbfField : IEquatable<DbfField>
         }
 
         writer.Write((char)Type);
-        writer.Write((uint)0); // 4 reserved bytes: Field data address in memory.
+        //writer.Write((uint)0); // 4 reserved bytes: Field data address in memory.
+        writer.Write(Offset); // FoxPro: offset of field from beginning of record.
         writer.Write(Length);
         writer.Write(Precision);
         writer.Write((ushort)0); // 2 reserved byte.

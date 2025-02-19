@@ -20,7 +20,7 @@ public class DbfRecord
         Data = new List<object>();
 
         // Read record marker.
-        byte marker = reader.ReadByte();
+        Marker = reader.ReadByte();
 
         // Read entire record as sequence of bytes.
         // Note that record length includes marker.
@@ -56,6 +56,8 @@ public class DbfRecord
     }
 #pragma warning disable 1591
     public List<object> Data { get; }
+
+    public byte Marker { get; } = 0x20;
 
     public object this[int index] => Data[index];
 
@@ -114,22 +116,52 @@ public class DbfRecord
         return string.Join(separator, fields.Select(z => string.Format(mask, z.Name, this[z])));
     }
 
-    internal void Write(BinaryWriter writer, Encoding encoding)
+    public void SetMemoOffset(DbfField field, int offset)
     {
-        // Write marker (always "not deleted")
-        writer.Write((byte)0x20);
+        int index = fields.FindIndex(f => f.Name == field.Name);
+        if (index < 0)
+            throw new KeyNotFoundException($"Il campo '{field.Name}' non esiste nel record.");
+
+        Data[index] = offset;
+    }
+
+    //internal void Write(BinaryWriter writer, Encoding encoding)
+    internal void Write(BinaryWriter writer, Encoding encoding, ref long? memoOffset, BinaryWriter fptWriter)
+    {
+        //// Write marker (always "not deleted")
+        //writer.Write((byte)0x20);
+        writer.Write(Marker);
 
         var index = 0;
         foreach (var field in fields)
         {
+
+            //START
+            if (field.Type == DbfFieldType.Memo)
+            {
+                memoOffset ??= MemoEncoder.BlockSize;
+
+                var memoString = this[field.Name]?.ToString();
+                var memoDataLength = MemoEncoder.Instance.WriteMemo(field, memoString, encoding, memoOffset.Value, fptWriter);
+                var currentMemoOffset = memoOffset.Value / MemoEncoder.BlockSize;
+                if (false) //DEBUG ONLY
+                SetMemoOffset(field, (int)currentMemoOffset);
+                
+                memoOffset += memoDataLength;
+            }
+            //END
+
             var encoder = EncoderFactory.GetEncoder(field.Type);
             var buffer = encoder.Encode(field, Data[index], encoding);
-            if (buffer.Length > field.Length)
+            if (buffer != null)
             {
-                throw new ArgumentOutOfRangeException(nameof(buffer.Length), buffer.Length, "Buffer length has exceeded length of the field.");
-            }
+                if (buffer.Length > field.Length)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(buffer.Length), buffer.Length, "Buffer length has exceeded length of the field.");
+                }
 
-            writer.Write(buffer);
+                writer.Write(buffer);
+            }
             index++;
         }
     }

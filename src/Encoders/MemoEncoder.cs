@@ -10,17 +10,63 @@ internal class MemoEncoder : IEncoder
 
     public static MemoEncoder Instance => _instance ??= new MemoEncoder();
 
-    /// <inheritdoc />
+    public const int BlockSize = 64;
+
+    public int WriteMemo(DbfField field, string memoString, Encoding encoding, long memoOffset, BinaryWriter fptWriter)
+    {
+        if (string.IsNullOrWhiteSpace(memoString))
+        {
+            return 0; // BitConverter.GetBytes(0); // Offset nullo per valori vuoti
+        }
+
+        if (field.Type != DbfFieldType.Memo)
+        {
+            throw new InvalidOperationException("Campo non valido per dati memo.");
+        }
+
+        var memoBytes = encoding.GetBytes(memoString);
+        var totalSize = memoBytes.Length + 4; // 4-byte header per la lunghezza
+        var requiredBlocks = (totalSize + BlockSize - 1) / BlockSize;
+        var dataSize = requiredBlocks * BlockSize;
+
+        var memoBlock = new byte[dataSize];
+        Array.Copy(BitConverter.GetBytes(memoBytes.Length), memoBlock, 4);
+        Array.Copy(memoBytes, 0, memoBlock, 4, memoBytes.Length);
+
+        fptWriter!.Seek((int)memoOffset, SeekOrigin.Begin);
+        fptWriter.Write(memoBlock);
+
+        return dataSize;
+    }
+
     public byte[] Encode(DbfField field, object data, Encoding encoding)
     {
-        return null;
+        //TOCHECK
+        if (data == null) return BitConverter.GetBytes(0);
+        if (field.Length > 4) return encoding.GetBytes(data.ToString());
+        /*
+        var length = data?.ToString().Length ?? 0;
+        if (length == 0)
+        {
+            return BitConverter.GetBytes(0);
+        }
+        if (length > 4)
+        {
+            return encoding.GetBytes(data.ToString());
+        }
+        if (data.ToString() == Environment.NewLine)
+        {
+            return encoding.GetBytes("\n");
+        }
+        */
+        return BitConverter.GetBytes((int)data);
     }
 
     /// <inheritdoc />
     public object Decode(byte[] buffer, byte[] memoData, Encoding encoding)
     {
         var index = 0;
-        // Memo fields of 5+ byts in length store their index in text, e.g. "     39394"
+        // Memo fields of 5+ bytes in length store their index in text, e.g. "     39394"
         // Memo fields of 4 bytes store their index as an int.
         if (buffer.Length > 4)
         {
@@ -34,7 +80,9 @@ internal class MemoEncoder : IEncoder
             if (index == 0) return null;
         }
 
+        if (false) //DEBUG ONLY
         return FindMemo(index, memoData, encoding);
+        return index;
     }
 
     private static string FindMemo(int index, byte[] memoData, Encoding encoding)
@@ -70,6 +118,8 @@ internal class MemoEncoder : IEncoder
             memoBytes[i - lengthToSkip] = memoData[i];
         }
 
-        return encoding.GetString(memoBytes).Trim();
+        return encoding.GetString(memoBytes)
+            //.Trim() //TOCHECK
+        ;
     }
 }

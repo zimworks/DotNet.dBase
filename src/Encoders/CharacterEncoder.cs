@@ -51,7 +51,9 @@ internal class CharacterEncoder : IEncoder
     /// <inheritdoc />
     public object Decode(byte[] buffer, byte[] memoData, Encoding encoding)
     {
-        var text = encoding.GetString(buffer).Trim();
+        var text = encoding.GetString(buffer)
+            //.Trim() //TOCHECK
+            ;
         return text.Length == 0 ? null : text;
     }
 }

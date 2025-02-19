@@ -5,7 +5,7 @@ public class Dbf3Header : DbfHeader
 {
     internal override void Read(BinaryReader reader)
     {
-        Version = (DbfVersion) reader.ReadByte();
+        Version = (DbfVersion)reader.ReadByte();
         var year = 1900 + reader.ReadByte();
         var month = reader.ReadByte();
         var day = reader.ReadByte();
@@ -13,16 +13,22 @@ public class Dbf3Header : DbfHeader
         NumRecords = reader.ReadUInt32();
         HeaderLength = reader.ReadUInt16();
         RecordLength = reader.ReadUInt16();
-        reader.ReadBytes(20); // Skip rest of header.
+        //reader.ReadBytes(20); // Skip rest of header.
+        reader.ReadBytes(16); // Skip rest of header.
+        MdxFlag = reader.ReadByte(); //0x02 = DOS Multilingual (code page 850)
+        LanguageDriver = reader.ReadByte(); //0x02 = DOS Multilingual (code page 850)
+        reader.ReadBytes(2); // Skip rest of header.
     }
 
     internal override void Write(BinaryWriter writer, List<DbfField> fields, List<DbfRecord> records)
     {
-        LastUpdate = DateTime.Now;
-        // Header length = header fields (32b ytes)
+        //LastUpdate = DateTime.Now;
+        LastUpdate = new DateTime(1921, 10, 8); //TOCHECK
+        // Header length = header fields (32bytes)
         //               + 32 bytes for each field
         //               + field descriptor array terminator (1 byte)
-        HeaderLength = (ushort)(32 + fields.Count * 32 + 1);
+        //               + 263 bytes for backlist (Visual FoxPro)
+        HeaderLength = (ushort)(32 + fields.Count * 32 + 1 + 263);
         NumRecords = (uint)records.Count;
         RecordLength = 1;
         foreach (var field in fields)
@@ -37,9 +43,14 @@ public class Dbf3Header : DbfHeader
         writer.Write(NumRecords);
         writer.Write(HeaderLength);
         writer.Write(RecordLength);
-        for (var i = 0; i < 20; i++)
+        //for (var i = 0; i < 20; i++)
+        for (var i = 0; i < 16; i++)
         {
             writer.Write((byte)0);
         }
+        writer.Write(MdxFlag);
+        writer.Write(LanguageDriver);
+        writer.Write((byte)0);
+        writer.Write((byte)0);
     }
 }

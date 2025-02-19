@@ -11,7 +11,7 @@ using System.Text;
 /// </summary>
 public class Dbf
 {
-    private DbfHeader header;
+    public DbfHeader header; //TOCHECK
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Dbf" />.
@@ -45,9 +45,9 @@ public class Dbf
 
     /// <summary>
     /// The <see cref="System.Text.Encoding" /> class that corresponds to the specified code page.
-    /// Default value is <see cref="System.Text.Encoding.ASCII" />
     /// </summary>
-    public Encoding Encoding { get; } = Encoding.ASCII;
+    //public Encoding Encoding { get; } = Encoding.ASCII;
+    public Encoding Encoding { get; } = Encoding.GetEncoding(850);
 
     /// <summary>
     /// Creates a new <see cref="DbfRecord" /> with the same schema as the table.
@@ -98,7 +98,9 @@ public class Dbf
 
         baseStream.Seek(0, SeekOrigin.Begin);
         // using var reader = new BinaryReader(baseStream);
-        using var reader = new BinaryReader(baseStream, Encoding.ASCII); // ReadFields() use PeekChar to detect end flag=0D, default Encoding may be UTF8 then clause exception
+        //using var reader = new BinaryReader(baseStream, Encoding.ASCII); // ReadFields() use PeekChar to detect end flag=0D, default Encoding may be UTF8 then cause exception
+        var encoding = Encoding.GetEncoding(850);
+        using var reader = new BinaryReader(baseStream, encoding); // ReadFields() use PeekChar to detect end flag=0D, default Encoding may be UTF8 then cause exception
         ReadHeader(reader);
         var memoData = memoStream != null ? ReadMemos(memoStream) : null;
         ReadFields(reader);
@@ -114,16 +116,24 @@ public class Dbf
     /// </summary>
     /// <param name="path">The file to read.</param>
     /// <param name="version">The version <see cref="DbfVersion" />. If unknown specified, use current header version.</param>
-    public void Write(string path, DbfVersion version = DbfVersion.Unknown)
+    /// <param name="mdxFlag"></param>
+    /// <param name="languageDriver"></param>
+    public void Write(string path, DbfVersion version = DbfVersion.VisualFoxPro
+        , byte mdxFlag = 0x20, byte languageDriver = 0x20
+    )
     {
         if (version != DbfVersion.Unknown)
         {
             header.Version = version;
             header = DbfHeader.CreateHeader(header.Version);
+            header.MdxFlag = mdxFlag;
+            header.LanguageDriver = languageDriver;
         }
 
+        var memoPath = GetMemoPath(path, true);
+        using var memoStream = new FileStream(memoPath, FileMode.Create, FileAccess.Write);
         using var stream = File.Open(path, FileMode.Create, FileAccess.Write);
-        Write(stream, false);
+        Write(stream, false, memoStream);
     }
 
     /// <summary>
@@ -139,15 +149,16 @@ public class Dbf
             header = DbfHeader.CreateHeader(header.Version);
         }
 
-        Write(stream, true);
+        Write(stream, true, null);
     }
 
-    private void Write(Stream stream, bool leaveOpen)
+    private void Write(Stream stream, bool leaveOpen, Stream memoStream)
     {
+        using var fptWriter = new BinaryWriter(memoStream);
         using var writer = new BinaryWriter(stream, Encoding, leaveOpen);
         header.Write(writer, Fields, Records);
         WriteFields(writer);
-        WriteRecords(writer);
+        WriteRecords(writer, fptWriter);
     }
 
     private static byte[] ReadMemos(Stream stream)
@@ -212,23 +223,30 @@ public class Dbf
 
         // Write field descriptor array terminator.
         writer.Write((byte) 0x0d);
+
+        // Write database container.
+        for (var i = 0; i < 263; i++)
+        {
+            writer.Write((byte)0); // 263 reserved bytes.
+        }
     }
 
-    private void WriteRecords(BinaryWriter writer)
+    private void WriteRecords(BinaryWriter writer, BinaryWriter fptWriter)
     {
+        long? memoOffset = null;
         foreach (var record in Records)
         {
-            record.Write(writer, Encoding);
+            record.Write(writer, Encoding, ref memoOffset, fptWriter);
         }
 
         // Write EOF character.
         writer.Write((byte) 0x1a);
     }
 
-    private static string GetMemoPath(string basePath)
+    private static string GetMemoPath(string basePath, bool forceFpt = false)
     {
         var memoPath = Path.ChangeExtension(basePath, "fpt");
-        if (File.Exists(memoPath))
+        if (forceFpt || File.Exists(memoPath))
         {
             return memoPath;
         }
