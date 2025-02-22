@@ -11,7 +11,16 @@ using System.Text;
 /// </summary>
 public class Dbf
 {
-    public DbfHeader header; //TOCHECK
+    private DbfHeader header;
+
+    public const DbfVersion DefaultVersion = DbfVersion.VisualFoxPro;
+    public const byte DefaultFlag = (byte)FoxProFlag.WithMemo;
+    public const byte DefaultCodepage = (byte)FoxProCodepage.DOS_Multilingual;
+    public const string DefaultEncodingName = "ibm850";
+
+    public DbfVersion Version => header?.Version ?? DefaultVersion;
+    public byte Flag => header?.Flag ?? DefaultFlag;
+    public byte Codepage => header?.Codepage ?? DefaultCodepage;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Dbf" />.
@@ -46,8 +55,7 @@ public class Dbf
     /// <summary>
     /// The <see cref="System.Text.Encoding" /> class that corresponds to the specified code page.
     /// </summary>
-    //public Encoding Encoding { get; } = Encoding.ASCII;
-    public Encoding Encoding { get; } = Encoding.GetEncoding(850);
+    public Encoding Encoding { get; } = Encoding.GetEncoding(DefaultEncodingName);
 
     /// <summary>
     /// Creates a new <see cref="DbfRecord" /> with the same schema as the table.
@@ -99,8 +107,7 @@ public class Dbf
         baseStream.Seek(0, SeekOrigin.Begin);
         // using var reader = new BinaryReader(baseStream);
         //using var reader = new BinaryReader(baseStream, Encoding.ASCII); // ReadFields() use PeekChar to detect end flag=0D, default Encoding may be UTF8 then cause exception
-        var encoding = Encoding.GetEncoding(850);
-        using var reader = new BinaryReader(baseStream, encoding); // ReadFields() use PeekChar to detect end flag=0D, default Encoding may be UTF8 then cause exception
+        using var reader = new BinaryReader(baseStream, Encoding);
         ReadHeader(reader);
         var memoData = memoStream != null ? ReadMemos(memoStream) : null;
         ReadFields(reader);
@@ -116,18 +123,18 @@ public class Dbf
     /// </summary>
     /// <param name="path">The file to read.</param>
     /// <param name="version">The version <see cref="DbfVersion" />. If unknown specified, use current header version.</param>
-    /// <param name="mdxFlag"></param>
-    /// <param name="languageDriver"></param>
+    /// <param name="flag"></param>
+    /// <param name="codepage"></param>
     public void Write(string path, DbfVersion version = DbfVersion.VisualFoxPro
-        , byte mdxFlag = 0x20, byte languageDriver = 0x20
+        , byte flag = DefaultFlag, byte codepage = DefaultCodepage
     )
     {
         if (version != DbfVersion.Unknown)
         {
             header.Version = version;
             header = DbfHeader.CreateHeader(header.Version);
-            header.MdxFlag = mdxFlag;
-            header.LanguageDriver = languageDriver;
+            header.Flag = flag;
+            header.Codepage = codepage;
         }
 
         var memoPath = GetMemoPath(path, true);
@@ -137,7 +144,7 @@ public class Dbf
     }
 
     /// <summary>
-    /// Creates writes the current instance to the specified stream.
+    /// Writes the current instance to the specified stream.
     /// </summary>
     /// <param name="stream">The output stream.</param>
     /// <param name="version">The version <see cref="DbfVersion" />. If unknown specified, use current header version.</param>
@@ -240,7 +247,9 @@ public class Dbf
         }
 
         // Write EOF character.
+#if !DEBUG
         writer.Write((byte) 0x1a);
+#endif
     }
 
     private static string GetMemoPath(string basePath, bool forceFpt = false)

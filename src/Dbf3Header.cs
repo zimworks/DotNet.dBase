@@ -14,16 +14,18 @@ public class Dbf3Header : DbfHeader
         HeaderLength = reader.ReadUInt16();
         RecordLength = reader.ReadUInt16();
         //reader.ReadBytes(20); // Skip rest of header.
-        reader.ReadBytes(16); // Skip rest of header.
-        MdxFlag = reader.ReadByte(); //0x02 = DOS Multilingual (code page 850)
-        LanguageDriver = reader.ReadByte(); //0x02 = DOS Multilingual (code page 850)
-        reader.ReadBytes(2); // Skip rest of header.
+        reader.ReadBytes(16);
+        Flag = reader.ReadByte();
+        Codepage = reader.ReadByte();
+        reader.ReadBytes(2);
     }
 
     internal override void Write(BinaryWriter writer, List<DbfField> fields, List<DbfRecord> records)
     {
-        //LastUpdate = DateTime.Now;
-        LastUpdate = new DateTime(1921, 10, 8); //TOCHECK
+        LastUpdate = DateTime.Now;
+#if DEBUG
+        LastUpdate = new DateTime(1921, 10, 8);
+#endif
         // Header length = header fields (32bytes)
         //               + 32 bytes for each field
         //               + field descriptor array terminator (1 byte)
@@ -48,8 +50,8 @@ public class Dbf3Header : DbfHeader
         {
             writer.Write((byte)0);
         }
-        writer.Write(MdxFlag);
-        writer.Write(LanguageDriver);
+        writer.Write(Flag);
+        writer.Write(Codepage);
         writer.Write((byte)0);
         writer.Write((byte)0);
     }

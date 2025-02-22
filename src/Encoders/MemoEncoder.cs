@@ -12,6 +12,11 @@ internal class MemoEncoder : IEncoder
 
     public const int BlockSize = 64;
 
+#if DEBUG
+    public int Index { get; set; }
+#endif
+
+    #region MEMO
     public int WriteMemo(DbfField field, string memoString, Encoding encoding, long memoOffset, BinaryWriter fptWriter)
     {
         if (string.IsNullOrWhiteSpace(memoString))
@@ -38,13 +43,11 @@ internal class MemoEncoder : IEncoder
 
         return dataSize;
     }
+    #endregion
 
     public byte[] Encode(DbfField field, object data, Encoding encoding)
     {
-        //TOCHECK
-        if (data == null) return BitConverter.GetBytes(0);
-        if (field.Length > 4) return encoding.GetBytes(data.ToString());
-        /*
+        /* ChatGPT attempt
         var length = data?.ToString().Length ?? 0;
         if (length == 0)
         {
@@ -54,11 +57,11 @@ internal class MemoEncoder : IEncoder
         {
             return encoding.GetBytes(data.ToString());
         }
-        if (data.ToString() == Environment.NewLine)
-        {
-            return encoding.GetBytes("\n");
-        }
         */
+
+        if (data == null) return BitConverter.GetBytes(0);
+        if (field.Length > 4)
+            return encoding.GetBytes(data.ToString());
         return BitConverter.GetBytes((int)data);
     }
 
@@ -66,6 +69,9 @@ internal class MemoEncoder : IEncoder
     public object Decode(byte[] buffer, byte[] memoData, Encoding encoding)
     {
         var index = 0;
+#if DEBUG
+        Index = index;
+#endif
         // Memo fields of 5+ bytes in length store their index in text, e.g. "     39394"
         // Memo fields of 4 bytes store their index as an int.
         if (buffer.Length > 4)
@@ -80,9 +86,10 @@ internal class MemoEncoder : IEncoder
             if (index == 0) return null;
         }
 
-        if (false) //DEBUG ONLY
+#if DEBUG
+        Index = index;
+#endif
         return FindMemo(index, memoData, encoding);
-        return index;
     }
 
     private static string FindMemo(int index, byte[] memoData, Encoding encoding)

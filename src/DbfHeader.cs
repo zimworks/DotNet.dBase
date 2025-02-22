@@ -32,14 +32,14 @@ public abstract class DbfHeader
     public ushort RecordLength { get; set; }
 
     /// <summary>
-    /// MdxFlag byte.
+    /// Flag byte.
     /// </summary>
-    public byte MdxFlag { get; set; }
+    public byte Flag { get; set; }
 
     /// <summary>
-    /// LanguageDriver byte.
+    /// Codepage byte.
     /// </summary>
-    public byte LanguageDriver { get; set; }
+    public byte Codepage { get; set; }
 #pragma warning disable 1591
     public static DbfHeader CreateHeader(DbfVersion version)
     {

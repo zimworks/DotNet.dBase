@@ -38,7 +38,20 @@ public class DbfRecord
             offset += field.Length;
 
             IEncoder encoder = EncoderFactory.GetEncoder(field.Type);
+#if DEBUG
+            int index;
+            if (encoder is MemoEncoder me1)
+            {
+                index = BitConverter.ToInt32(buffer);
+            }
+#endif
             Data.Add(encoder.Decode(buffer, memoData, encoding));
+#if DEBUG
+            if (encoder is MemoEncoder me2)
+            {
+                field.MemoIndex = me2.Index;
+            }
+#endif
         }
     }
 
@@ -57,7 +70,7 @@ public class DbfRecord
 #pragma warning disable 1591
     public List<object> Data { get; }
 
-    public byte Marker { get; } = 0x20;
+    public byte Marker { get; } = (byte)DbfRecordMarker.Valid;
 
     public object this[int index] => Data[index];
 
@@ -110,7 +123,7 @@ public class DbfRecord
     /// <returns>A string that represents the current object with custom separator and mask.</returns>
     public string ToString(string separator, string mask)
     {
-        separator = separator ?? DefaultSeparator;
+        separator ??= DefaultSeparator;
         mask = (mask ?? DefaultMask).Replace("{name}", "{0}").Replace("{value}", "{1}");
 
         return string.Join(separator, fields.Select(z => string.Format(mask, z.Name, this[z])));
@@ -135,21 +148,27 @@ public class DbfRecord
         var index = 0;
         foreach (var field in fields)
         {
-
-            //START
+            #region MEMO
+            long currentMemoOffset;
             if (field.Type == DbfFieldType.Memo)
             {
                 memoOffset ??= MemoEncoder.BlockSize;
 
                 var memoString = this[field.Name]?.ToString();
-                var memoDataLength = MemoEncoder.Instance.WriteMemo(field, memoString, encoding, memoOffset.Value, fptWriter);
-                var currentMemoOffset = memoOffset.Value / MemoEncoder.BlockSize;
-                if (false) //DEBUG ONLY
+                if (!string.IsNullOrWhiteSpace(memoString))
+                {
+                    var memoDataLength = MemoEncoder.Instance.WriteMemo(field, memoString, encoding, memoOffset.Value, fptWriter);
+                    currentMemoOffset = memoOffset.Value / MemoEncoder.BlockSize;
+                    memoOffset += memoDataLength;
+                }
+                else
+                {
+                    currentMemoOffset = 0;
+                }
+
                 SetMemoOffset(field, (int)currentMemoOffset);
-                
-                memoOffset += memoDataLength;
             }
-            //END
+            #endregion
 
             var encoder = EncoderFactory.GetEncoder(field.Type);
             var buffer = encoder.Encode(field, Data[index], encoding);

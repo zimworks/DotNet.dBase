@@ -35,6 +35,10 @@ public class DbfField : IEquatable<DbfField>
     public byte WorkAreaID { get; set; }
 
     public byte Flags { get; set; }
+
+#if DEBUG
+    public int MemoIndex { get; set; }
+#endif
 #pragma warning restore 1591
 
     /// <summary>
