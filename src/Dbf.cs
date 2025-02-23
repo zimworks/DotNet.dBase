@@ -3,6 +3,7 @@
 using Encoders;
 using System;
 using System.Buffers.Binary;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -190,7 +191,17 @@ public class Dbf
             {
                 if (field.Type == DbfFieldType.Memo)
                 {
-                    var value = record[field.Name];
+                    var value = record[field.Name, true];
+
+#if DEBUG
+                    var encoder = MemoEncoder.Instance;
+                    var memoData = encoder.Encode(field, value, Encoding);
+
+                    var offset = (int)record[field.Name];
+                    var start = offset * MemoEncoder.BlockSize;
+                    fptWriter.Seek(start, SeekOrigin.Begin);
+                    fptWriter.Write(memoData);
+#else
                     if (string.IsNullOrEmpty(value?.ToString())) // Null/empty memo fields have a null (zero) offset!
                     {
                         record.SetMemoOffset(field, 0);
@@ -201,7 +212,7 @@ public class Dbf
                         var memoData = encoder.Encode(field, value, Encoding);
 
                         //var currentMemoOffset = memoOffset / MemoEncoder.BlockSize;
-                        var currentMemoOffset = memoOffset / fptHeader.BlockSize;
+                        var currentMemoOffset = (memoOffset - fptHeader.HeaderSize + fptHeader.BlockSize) / fptHeader.BlockSize;
                         record.SetMemoOffset(field, (int)currentMemoOffset);
 
                         fptWriter.Seek((int)memoOffset, SeekOrigin.Begin);
@@ -209,6 +220,7 @@ public class Dbf
 
                         memoOffset += memoData.Length;
                     }
+#endif
                 }
             }
         }

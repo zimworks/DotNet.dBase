@@ -1,4 +1,5 @@
 ﻿using dBASE.NET.Encoders;
+using System.Buffers.Binary;
 using System.Text;
 
 namespace dBASE.NET;
@@ -19,6 +20,7 @@ public class DbfRecord
     {
         this.Fields = fields;
         Data = [];
+        Memo = [];
 
         // Read record marker.
         Marker = reader.ReadByte();
@@ -44,7 +46,16 @@ public class DbfRecord
             var encoder = EncoderFactory.GetEncoder(field.Type);
             var data = encoder.Decode(buffer, memoData, encoding);
             //data?.ToString() == "             12"
-            Data.Add(data);
+            if (field.Type == DbfFieldType.Memo)
+            {
+                Data.Add(BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(0, 4)));
+                Memo.Add(data);
+            }
+            else
+            {
+                Data.Add(data);
+                Memo.Add(null);
+            }
         }
     }
 
@@ -61,9 +72,9 @@ public class DbfRecord
         }
     }
 #pragma warning disable 1591
-    public List<object> Data { get; }
-
     public byte Marker { get; } = (byte)DbfRecordMarker.Valid;
+
+    public List<object> Data { get; }
 
     public object this[int index] => Data[index];
 
@@ -82,6 +93,17 @@ public class DbfRecord
         {
             var index = Fields.IndexOf(field);
             return index == -1 ? null : Data[index];
+        }
+    }
+
+    public List<object> Memo { get; }
+
+    public object this[string name, bool memoData]
+    {
+        get
+        {
+            var index = Fields.FindIndex(x => x.Name.Equals(name));
+            return index == -1 ? null : Memo[index];
         }
     }
 #pragma warning restore 1591
