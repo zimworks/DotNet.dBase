@@ -80,23 +80,26 @@ public class Dbf
     {
         // Open stream for reading.
         using var baseStream = File.Open(path, FileMode.Open, FileAccess.Read,  FileShare.Read);
-        var memoPath = GetMemoPath(path);
-        if (memoPath == null)
+        var fptPath = GetMemoPath(path);
+        if (fptPath == null)
         {
             Read(baseStream);
             return;
         }
 
-        using var fptStream = File.Open(memoPath, FileMode.Open, FileAccess.Read,  FileShare.Read);
-        Read(baseStream, fptStream);
+        //using var fptStream = File.Open(memoPath, FileMode.Open, FileAccess.Read,  FileShare.Read);
+        //Read(baseStream, fptStream);
+        Read(baseStream, fptPath);
     }
 
     /// <summary>
     /// Reads the contents of streams that initialize the current instance.
     /// </summary>
     /// <param name="dbfStream">Stream with a database.</param>
-    /// <param name="fptStream">Stream with a memo.</param>
-    public void Read(Stream dbfStream, Stream fptStream = null)
+    /// <param name="fptPath">Stream with a memo.</param>
+    /*/// <param name="fptStream">Stream with a memo.</param>*/
+    //public void Read(Stream dbfStream, Stream fptStream = null)
+    public void Read(Stream dbfStream, string fptPath = null)
     {
         if (dbfStream == null)
         {
@@ -108,6 +111,14 @@ public class Dbf
             throw new InvalidOperationException("The stream must provide positioning (support Seek method).");
         }
 
+        if (fptPath != null)
+        {
+            using var fptStream = File.Open(fptPath, FileMode.Open, FileAccess.Read,  FileShare.Read);
+            fptStream.Seek(0, SeekOrigin.Begin);
+            using var fptReader = new BinaryReader(fptStream, Encoding);
+            fptHeader = FptHeader.Read(fptReader);
+        }
+
         dbfStream.Seek(0, SeekOrigin.Begin);
         using var reader = new BinaryReader(dbfStream, Encoding);
         ReadHeader(reader);
@@ -116,15 +127,17 @@ public class Dbf
         // After reading the fields, we move the read pointer to the beginning
         // of the records, as indicated by the "HeaderLength" value in the header.
         dbfStream.Seek(header.HeaderLength, SeekOrigin.Begin);
-        var fptBytes = fptStream != null ? ReadMemos(fptStream) : null;
-        ReadRecords(reader, fptBytes);
-
-        if (fptStream != null)
+        byte[] fptBytes;
+        if (fptPath != null)
         {
-            fptStream.Seek(0, SeekOrigin.Begin);
-            using var fptReader = new BinaryReader(fptStream, Encoding);
-            fptHeader = FptHeader.Read(fptReader);
+            using var fptStream = File.Open(fptPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            fptBytes = ReadMemos(fptStream);
         }
+        else
+        {
+            fptBytes = null;
+        }
+        ReadRecords(reader, fptBytes);
     }
 
     /// <summary>
@@ -198,9 +211,12 @@ public class Dbf
                     var memoData = encoder.Encode(field, value, Encoding);
 
                     var offset = (int)record[field.Name];
-                    var start = offset * MemoEncoder.BlockSize;
-                    fptWriter.Seek(start, SeekOrigin.Begin);
-                    fptWriter.Write(memoData);
+                    if (offset > 0)
+                    {
+                        var start = offset * MemoEncoder.BlockSize;
+                        fptWriter.Seek(start, SeekOrigin.Begin);
+                        fptWriter.Write(memoData);
+                    }
 #else
                     if (string.IsNullOrEmpty(value?.ToString())) // Null/empty memo fields have a null (zero) offset!
                     {
