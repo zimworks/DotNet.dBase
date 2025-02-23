@@ -14,6 +14,7 @@ using System.Text;
 public class Dbf
 {
     private DbfHeader header;
+    private FptHeader fptHeader;
 
     public const DbfVersion DefaultVersion = DbfVersion.VisualFoxPro;
     public const byte DefaultFlag = (byte)FoxProFlag.WithMemo;
@@ -85,39 +86,44 @@ public class Dbf
             return;
         }
 
-        using var memoStream = File.Open(memoPath, FileMode.Open, FileAccess.Read,  FileShare.Read);
-        Read(baseStream, memoStream);
+        using var fptStream = File.Open(memoPath, FileMode.Open, FileAccess.Read,  FileShare.Read);
+        Read(baseStream, fptStream);
     }
 
     /// <summary>
     /// Reads the contents of streams that initialize the current instance.
     /// </summary>
-    /// <param name="baseStream">Stream with a database.</param>
-    /// <param name="memoStream">Stream with a memo.</param>
-    public void Read(Stream baseStream, Stream memoStream = null)
+    /// <param name="dbfStream">Stream with a database.</param>
+    /// <param name="fptStream">Stream with a memo.</param>
+    public void Read(Stream dbfStream, Stream fptStream = null)
     {
-        if (baseStream == null)
+        if (dbfStream == null)
         {
-            throw new ArgumentNullException(nameof(baseStream));
+            throw new ArgumentNullException(nameof(dbfStream));
         }
 
-        if (!baseStream.CanSeek)
+        if (!dbfStream.CanSeek)
         {
             throw new InvalidOperationException("The stream must provide positioning (support Seek method).");
         }
 
-        baseStream.Seek(0, SeekOrigin.Begin);
-        // using var reader = new BinaryReader(baseStream);
-        //using var reader = new BinaryReader(baseStream, Encoding.ASCII); // ReadFields() use PeekChar to detect end flag=0D, default Encoding may be UTF8 then cause exception
-        using var reader = new BinaryReader(baseStream, Encoding);
+        dbfStream.Seek(0, SeekOrigin.Begin);
+        using var reader = new BinaryReader(dbfStream, Encoding);
         ReadHeader(reader);
-        var memoData = memoStream != null ? ReadMemos(memoStream) : null;
         ReadFields(reader);
 
         // After reading the fields, we move the read pointer to the beginning
         // of the records, as indicated by the "HeaderLength" value in the header.
-        baseStream.Seek(header.HeaderLength, SeekOrigin.Begin);
-        ReadRecords(reader, memoData);
+        dbfStream.Seek(header.HeaderLength, SeekOrigin.Begin);
+        var fptBytes = fptStream != null ? ReadMemos(fptStream) : null;
+        ReadRecords(reader, fptBytes);
+
+        if (fptStream != null)
+        {
+            fptStream.Seek(0, SeekOrigin.Begin);
+            using var fptReader = new BinaryReader(fptStream, Encoding);
+            fptHeader = FptHeader.Read(fptReader);
+        }
     }
 
     /// <summary>
@@ -172,10 +178,11 @@ public class Dbf
         using var fptWriter = new BinaryWriter(fptStream, Encoding);
 
         // Initialize the FPT header per Alaska's spec.
-        InitializeFptHeader(fptWriter, MemoEncoder.HeaderSize);
+        fptHeader ??= new FptHeader();
+        fptHeader.Write(fptWriter);
 
         // Start writing memo data immediately after the header block.
-        long memoOffset = MemoEncoder.HeaderSize;
+        long memoOffset = fptHeader.HeaderSize;
 
         foreach (var record in Records)
         {
@@ -193,7 +200,8 @@ public class Dbf
                         var encoder = MemoEncoder.Instance;
                         var memoData = encoder.Encode(field, value, Encoding);
 
-                        var currentMemoOffset = memoOffset / MemoEncoder.BlockSize;
+                        //var currentMemoOffset = memoOffset / MemoEncoder.BlockSize;
+                        var currentMemoOffset = memoOffset / fptHeader.BlockSize;
                         record.SetMemoOffset(field, (int)currentMemoOffset);
 
                         fptWriter.Seek((int)memoOffset, SeekOrigin.Begin);
@@ -206,19 +214,6 @@ public class Dbf
         }
 
         WriteRecords(writer);
-    }
-
-    // Initializes the FPT header according to Alaska's specification.
-    private void InitializeFptHeader(BinaryWriter writer, int blockSize)
-    {
-        var headerBlock = new byte[blockSize]; // Alaska's spec requires a header block equal to blockSize (64 bytes).
-        // Write next available block (starting at 1) in big-endian format.
-        BinaryPrimitives.WriteInt32BigEndian(headerBlock.AsSpan(0, 4), 1);
-        // Write the block size in big-endian format.
-        BinaryPrimitives.WriteInt32BigEndian(headerBlock.AsSpan(4, 4), blockSize);
-        // The rest of the header is reserved and remains zero.
-        writer.Seek(0, SeekOrigin.Begin);
-        writer.Write(headerBlock);
     }
 
     private static byte[] ReadMemos(Stream stream)
