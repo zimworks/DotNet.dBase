@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Buffers.Binary;
+using System.Text;
 
 namespace dBASE.NET.Encoders;
 
@@ -10,13 +11,14 @@ internal class MemoEncoder : IEncoder
 
     public static MemoEncoder Instance => _instance ??= new MemoEncoder();
 
+    public const int HeaderSize = 512;
     public const int BlockSize = 64;
 
     public byte[] Encode(DbfField field, object data, Encoding encoding)
     {
         if (data == null || string.IsNullOrEmpty(data.ToString()))
         {
-            return BitConverter.GetBytes(0); // Null offset for empty values
+            return BitConverter.GetBytes(0); // Return null offset for empty memo values.
         }
 
         if (field.Type != DbfFieldType.Memo)
@@ -26,13 +28,14 @@ internal class MemoEncoder : IEncoder
 
         var value = data.ToString();
         var encodedData = encoding.GetBytes(value);
-        var totalSize = encodedData.Length + 8; // 8-byte header for FPT format
+        var totalSize = encodedData.Length + 8; // 8-byte header: 4 bytes for type and 4 for length.
         var requiredBlocks = (totalSize + BlockSize - 1) / BlockSize;
         var dataSize = requiredBlocks * BlockSize;
 
         var memoBlock = new byte[dataSize];
-        Array.Copy(BitConverter.GetBytes(1), memoBlock, 4); // Type 0x01 (text)
-        Array.Copy(BitConverter.GetBytes(encodedData.Length), 0, memoBlock, 4, 4); // Length
+        // Write memo header using big-endian:
+        BinaryPrimitives.WriteInt32BigEndian(memoBlock.AsSpan(0, 4), 1); // Memo type 1 (text)
+        BinaryPrimitives.WriteInt32BigEndian(memoBlock.AsSpan(4, 4), encodedData.Length); // Length of memo content.
         Array.Copy(encodedData, 0, memoBlock, 8, encodedData.Length);
 
         return memoBlock;
@@ -41,60 +44,29 @@ internal class MemoEncoder : IEncoder
     /// <inheritdoc />
     public object Decode(byte[] buffer, byte[] memoData, Encoding encoding)
     {
-        /*
-        var index = 0;
-        // Memo fields of 5+ bytes in length store their index in text, e.g. "     39394"
-        // Memo fields of 4 bytes store their index as an int.
-        if (buffer.Length > 4)
-        {
-            var text = encoding.GetString(buffer).Trim();
-            if (text.Length == 0) return null;
-            index = Convert.ToInt32(text);
-        }
-        else
-        {
-            index = BitConverter.ToInt32(buffer, 0);
-            if (index == 0) return null;
-        }
-
-        return FindMemo(index, memoData, encoding);
-        */
-
         if (buffer == null || buffer.Length < 4)
         {
-            return null; // No valid offset data
+            return null; // No valid offset data.
         }
 
-        var offset = BitConverter.ToInt32(buffer, 0);
+        var offset = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(0, 4));
         if (offset <= 0)
         {
-            return null; // No memo data
+            return null; // No memo data.
         }
 
         var start = offset * BlockSize;
         if (start + 8 > memoData.Length)
         {
-            return null; // Not enough data for header
+            return null; // Not enough data for header.
         }
 
-        // Read memoType using big-endian conversion.
-        var typeBytes = memoData.Skip(start).Take(4).ToArray();
-        if (BitConverter.IsLittleEndian)
-        {
-            Array.Reverse(typeBytes);
-        }
-        var memoType = BitConverter.ToInt32(typeBytes, 0);
+        var memoType = BinaryPrimitives.ReadInt32BigEndian(memoData.AsSpan(start, 4));
+        var memoLength = BinaryPrimitives.ReadInt32BigEndian(memoData.AsSpan(start + 4, 4));
 
-        // Read memoLength using big-endian conversion.
-        var lengthBytes = memoData.Skip(start + 4).Take(4).ToArray();
-        if (BitConverter.IsLittleEndian)
-        {
-            Array.Reverse(lengthBytes);
-        }
-        var memoLength = BitConverter.ToInt32(lengthBytes, 0);
         if (memoType != 1 || memoLength <= 0 || start + 8 + memoLength > memoData.Length)
         {
-            return null; // Invalid memo block format
+            return null; // Invalid memo block format.
         }
 
         return encoding.GetString(memoData, start + 8, memoLength);

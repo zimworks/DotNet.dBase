@@ -166,26 +166,18 @@ public class DbfRecord
         {
             if (field.Type == DbfFieldType.Memo)
             {
+                // this is DBF+DBT bBASE spec, not DBF+FPT !
+                // var offsetValue = this[field.Name];
+                // var offsetStr = offsetValue.ToString().PadLeft(field.Length);
+                // writer.Write(encoding.GetBytes(offsetStr));
+
+                // this respects DBF+FPT spec
                 var offset = Convert.ToInt32(this[field.Name]);
-                if (offset == 0)
-                {
-                    writer.Write(BitConverter.GetBytes(offset));
-                }
-                else
-                {
-#if DEBUG
-                    writer.Write(BitConverter.GetBytes(offset));
-#else
-                    // Convert offset to string and pad it to the field length (assumes field.Length is defined)
-                    //var offsetStr = offset.ToString().PadLeft(field.Length);
-                    var offsetStr = offset.ToString().PadLeft(4);
-                    writer.Write(encoding.GetBytes(offsetStr));
-#endif
-                }
+                writer.Write(BitConverter.GetBytes(offset));
             }
             else
             {
-#if DEBUG
+#if !DEBUG
                     var encoder = EncoderFactory.GetEncoder(field.Type);
                     var buffer = encoder.Encode(field, Data[index], encoding);
                     if (buffer != null)
@@ -198,8 +190,8 @@ public class DbfRecord
                         writer.Write(buffer);
                     }
 #else
-                var encoder = EncoderFactory.GetEncoder(field.Type);
                 var value = this[field.Name];
+                var encoder = EncoderFactory.GetEncoder(field.Type);
                 var buffer = encoder.Encode(field, value, encoding);
                 writer.Write(buffer);
 #endif

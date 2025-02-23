@@ -2,6 +2,7 @@
 
 using Encoders;
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -158,18 +159,23 @@ public class Dbf
         Write(stream, true);
     }
 
+    // Private Write method performs the combined DBF/FPT write.
     private void Write(Stream stream, bool leaveOpen)
     {
         using var writer = new BinaryWriter(stream, Encoding, leaveOpen);
         header.Write(writer, Fields, Records);
         WriteFields(writer);
 
+        // Prepare the FPT file using the same base path as the DBF file.
         var fptPath = GetMemoPath(((FileStream)stream).Name, true);
         using var fptStream = new FileStream(fptPath, FileMode.Create, FileAccess.Write);
         using var fptWriter = new BinaryWriter(fptStream, Encoding);
 
-        fptWriter.Seek(MemoEncoder.BlockSize, SeekOrigin.Begin); // The first block is reserved
-        long memoOffset = MemoEncoder.BlockSize;
+        // Initialize the FPT header per Alaska's spec.
+        InitializeFptHeader(fptWriter, MemoEncoder.HeaderSize);
+
+        // Start writing memo data immediately after the header block.
+        long memoOffset = MemoEncoder.HeaderSize;
 
         foreach (var record in Records)
         {
@@ -178,7 +184,7 @@ public class Dbf
                 if (field.Type == DbfFieldType.Memo)
                 {
                     var value = record[field.Name];
-                    if (string.IsNullOrEmpty(value?.ToString()))
+                    if (string.IsNullOrEmpty(value?.ToString())) // Null/empty memo fields have a null (zero) offset!
                     {
                         record.SetMemoOffset(field, 0);
                     }
@@ -200,6 +206,19 @@ public class Dbf
         }
 
         WriteRecords(writer);
+    }
+
+    // Initializes the FPT header according to Alaska's specification.
+    private void InitializeFptHeader(BinaryWriter writer, int blockSize)
+    {
+        var headerBlock = new byte[blockSize]; // Alaska's spec requires a header block equal to blockSize (64 bytes).
+        // Write next available block (starting at 1) in big-endian format.
+        BinaryPrimitives.WriteInt32BigEndian(headerBlock.AsSpan(0, 4), 1);
+        // Write the block size in big-endian format.
+        BinaryPrimitives.WriteInt32BigEndian(headerBlock.AsSpan(4, 4), blockSize);
+        // The rest of the header is reserved and remains zero.
+        writer.Seek(0, SeekOrigin.Begin);
+        writer.Write(headerBlock);
     }
 
     private static byte[] ReadMemos(Stream stream)
