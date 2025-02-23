@@ -1,5 +1,6 @@
 ﻿namespace dBASE.NET;
 
+using Encoders;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -28,8 +29,8 @@ public class Dbf
     public Dbf()
     {
         header = DbfHeader.CreateHeader(DbfVersion.FoxBaseDBase3NoMemo);
-        Fields = new List<DbfField>();
-        Records = new List<DbfRecord>();
+        Fields = [];
+        Records = [];
     }
 
     /// <summary>
@@ -137,10 +138,8 @@ public class Dbf
             header.Codepage = codepage;
         }
 
-        var memoPath = GetMemoPath(path, true);
-        using var memoStream = new FileStream(memoPath, FileMode.Create, FileAccess.Write);
         using var stream = File.Open(path, FileMode.Create, FileAccess.Write);
-        Write(stream, false, memoStream);
+        Write(stream, false);
     }
 
     /// <summary>
@@ -156,16 +155,51 @@ public class Dbf
             header = DbfHeader.CreateHeader(header.Version);
         }
 
-        Write(stream, true, null);
+        Write(stream, true);
     }
 
-    private void Write(Stream stream, bool leaveOpen, Stream memoStream)
+    private void Write(Stream stream, bool leaveOpen)
     {
-        using var fptWriter = new BinaryWriter(memoStream);
         using var writer = new BinaryWriter(stream, Encoding, leaveOpen);
         header.Write(writer, Fields, Records);
         WriteFields(writer);
-        WriteRecords(writer, fptWriter);
+
+        var fptPath = GetMemoPath(((FileStream)stream).Name, true);
+        using var fptStream = new FileStream(fptPath, FileMode.Create, FileAccess.Write);
+        using var fptWriter = new BinaryWriter(fptStream, Encoding);
+
+        fptWriter.Seek(MemoEncoder.BlockSize, SeekOrigin.Begin); // The first block is reserved
+        long memoOffset = MemoEncoder.BlockSize;
+
+        foreach (var record in Records)
+        {
+            foreach (var field in Fields)
+            {
+                if (field.Type == DbfFieldType.Memo)
+                {
+                    var value = record[field.Name];
+                    if (string.IsNullOrEmpty(value?.ToString()))
+                    {
+                        record.SetMemoOffset(field, 0);
+                    }
+                    else
+                    {
+                        var encoder = MemoEncoder.Instance;
+                        var memoData = encoder.Encode(field, value, Encoding);
+
+                        var currentMemoOffset = memoOffset / MemoEncoder.BlockSize;
+                        record.SetMemoOffset(field, (int)currentMemoOffset);
+
+                        fptWriter.Seek((int)memoOffset, SeekOrigin.Begin);
+                        fptWriter.Write(memoData);
+
+                        memoOffset += memoData.Length;
+                    }
+                }
+            }
+        }
+
+        WriteRecords(writer);
     }
 
     private static byte[] ReadMemos(Stream stream)
@@ -238,16 +272,15 @@ public class Dbf
         }
     }
 
-    private void WriteRecords(BinaryWriter writer, BinaryWriter fptWriter)
+    private void WriteRecords(BinaryWriter writer)
     {
-        long? memoOffset = null;
         foreach (var record in Records)
         {
-            record.Write(writer, Encoding, ref memoOffset, fptWriter);
+            record.Write(writer, Encoding);
         }
 
-        // Write EOF character.
 #if !DEBUG
+        // Write EOF character.
         writer.Write((byte) 0x1a);
 #endif
     }

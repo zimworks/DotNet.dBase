@@ -12,66 +12,37 @@ internal class MemoEncoder : IEncoder
 
     public const int BlockSize = 64;
 
-#if DEBUG
-    public int Index { get; set; }
-#endif
-
-    #region MEMO
-    public int WriteMemo(DbfField field, string memoString, Encoding encoding, long memoOffset, BinaryWriter fptWriter)
+    public byte[] Encode(DbfField field, object data, Encoding encoding)
     {
-        if (string.IsNullOrWhiteSpace(memoString))
+        if (data == null || string.IsNullOrEmpty(data.ToString()))
         {
-            return 0; // BitConverter.GetBytes(0); // Offset nullo per valori vuoti
+            return BitConverter.GetBytes(0); // Null offset for empty values
         }
 
         if (field.Type != DbfFieldType.Memo)
         {
-            throw new InvalidOperationException("Campo non valido per dati memo.");
+            throw new InvalidOperationException("Invalid field for memo data.");
         }
 
-        var memoBytes = encoding.GetBytes(memoString);
-        var totalSize = memoBytes.Length + 4; // 4-byte header per la lunghezza
+        var value = data.ToString();
+        var encodedData = encoding.GetBytes(value);
+        var totalSize = encodedData.Length + 8; // 8-byte header for FPT format
         var requiredBlocks = (totalSize + BlockSize - 1) / BlockSize;
         var dataSize = requiredBlocks * BlockSize;
 
         var memoBlock = new byte[dataSize];
-        Array.Copy(BitConverter.GetBytes(memoBytes.Length), memoBlock, 4);
-        Array.Copy(memoBytes, 0, memoBlock, 4, memoBytes.Length);
+        Array.Copy(BitConverter.GetBytes(1), memoBlock, 4); // Type 0x01 (text)
+        Array.Copy(BitConverter.GetBytes(encodedData.Length), 0, memoBlock, 4, 4); // Length
+        Array.Copy(encodedData, 0, memoBlock, 8, encodedData.Length);
 
-        fptWriter!.Seek((int)memoOffset, SeekOrigin.Begin);
-        fptWriter.Write(memoBlock);
-
-        return dataSize;
-    }
-    #endregion
-
-    public byte[] Encode(DbfField field, object data, Encoding encoding)
-    {
-        /* ChatGPT attempt
-        var length = data?.ToString().Length ?? 0;
-        if (length == 0)
-        {
-            return BitConverter.GetBytes(0);
-        }
-        if (length > 4)
-        {
-            return encoding.GetBytes(data.ToString());
-        }
-        */
-
-        if (data == null) return BitConverter.GetBytes(0);
-        if (field.Length > 4)
-            return encoding.GetBytes(data.ToString());
-        return BitConverter.GetBytes((int)data);
+        return memoBlock;
     }
 
     /// <inheritdoc />
     public object Decode(byte[] buffer, byte[] memoData, Encoding encoding)
     {
+        /*
         var index = 0;
-#if DEBUG
-        Index = index;
-#endif
         // Memo fields of 5+ bytes in length store their index in text, e.g. "     39394"
         // Memo fields of 4 bytes store their index as an int.
         if (buffer.Length > 4)
@@ -86,47 +57,46 @@ internal class MemoEncoder : IEncoder
             if (index == 0) return null;
         }
 
-#if DEBUG
-        Index = index;
-#endif
         return FindMemo(index, memoData, encoding);
-    }
+        */
 
-    private static string FindMemo(int index, byte[] memoData, Encoding encoding)
-    {
-        // This is the original implementation of findMemo. It was found that
-        // the LINQ methods are orders of magnitude slower than using using array
-        // offsets.
-
-        /* UInt16 blockSize = BitConverter.ToUInt16(memoData.Skip(6).Take(2).Reverse().ToArray(), 0);
-           int type = (int)BitConverter.ToUInt32(memoData.Skip(index * blockSize).Take(4).Reverse().ToArray(), 0);
-           int length = (int)BitConverter.ToUInt32(memoData.Skip(index * blockSize + 4).Take(4).Reverse().ToArray(), 0);
-           string text = encoding.GetString(memoData.Skip(index * blockSize + 8).Take(length).ToArray()).Trim();
-           return text; */
-
-        // The index is measured from the start of the file, even though the memo file header blocks takes
-        // up the first few index positions.
-        var blockSize = BitConverter.ToUInt16(new[] { memoData[7], memoData[6] }, 0);
-        var length = (int)BitConverter.ToUInt32(
-            new[]
-            {
-                memoData[index * blockSize + 4 + 3],
-                memoData[index * blockSize + 4 + 2],
-                memoData[index * blockSize + 4 + 1],
-                memoData[index * blockSize + 4 + 0],
-            },
-            0);
-
-        var memoBytes = new byte[length];
-        var lengthToSkip = index * blockSize + 8;
-
-        for (var i = lengthToSkip; i < lengthToSkip + length; ++i)
+        if (buffer == null || buffer.Length < 4)
         {
-            memoBytes[i - lengthToSkip] = memoData[i];
+            return null; // No valid offset data
         }
 
-        return encoding.GetString(memoBytes)
-            //.Trim() //TOCHECK
-        ;
+        var offset = BitConverter.ToInt32(buffer, 0);
+        if (offset <= 0)
+        {
+            return null; // No memo data
+        }
+
+        var start = offset * BlockSize;
+        if (start + 8 > memoData.Length)
+        {
+            return null; // Not enough data for header
+        }
+
+        // Read memoType using big-endian conversion.
+        var typeBytes = memoData.Skip(start).Take(4).ToArray();
+        if (BitConverter.IsLittleEndian)
+        {
+            Array.Reverse(typeBytes);
+        }
+        var memoType = BitConverter.ToInt32(typeBytes, 0);
+
+        // Read memoLength using big-endian conversion.
+        var lengthBytes = memoData.Skip(start + 4).Take(4).ToArray();
+        if (BitConverter.IsLittleEndian)
+        {
+            Array.Reverse(lengthBytes);
+        }
+        var memoLength = BitConverter.ToInt32(lengthBytes, 0);
+        if (memoType != 1 || memoLength <= 0 || start + 8 + memoLength > memoData.Length)
+        {
+            return null; // Invalid memo block format
+        }
+
+        return encoding.GetString(memoData, start + 8, memoLength);
     }
 }

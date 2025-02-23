@@ -12,46 +12,39 @@ public class DbfRecord
     private const string DefaultSeparator = ",";
     private const string DefaultMask = "{name}={value}";
 
-    private List<DbfField> fields;
+    // ReSharper disable once InconsistentNaming
+    private readonly List<DbfField> Fields;
 
     internal DbfRecord(BinaryReader reader, DbfHeader header, List<DbfField> fields, byte[] memoData, Encoding encoding)
     {
-        this.fields = fields;
-        Data = new List<object>();
+        this.Fields = fields;
+        Data = [];
 
         // Read record marker.
         Marker = reader.ReadByte();
 
         // Read entire record as sequence of bytes.
         // Note that record length includes marker.
-        byte[] row = reader.ReadBytes(header.RecordLength - 1);
+        var row = reader.ReadBytes(header.RecordLength - 1);
         if (row.Length == 0)
             throw new EndOfStreamException();
+#if DEBUG
+        //if (Marker == (int)DbfRecordMarker.Deleted) return;
+#endif
 
         // Read data for each field.
-        int offset = 0;
-        foreach (DbfField field in fields)
+        var offset = 0;
+        foreach (var field in fields)
         {
             // Copy bytes from record buffer into field buffer.
-            byte[] buffer = new byte[field.Length];
+            var buffer = new byte[field.Length];
             Array.Copy(row, offset, buffer, 0, field.Length);
             offset += field.Length;
 
-            IEncoder encoder = EncoderFactory.GetEncoder(field.Type);
-#if DEBUG
-            int index;
-            if (encoder is MemoEncoder me1)
-            {
-                index = BitConverter.ToInt32(buffer);
-            }
-#endif
-            Data.Add(encoder.Decode(buffer, memoData, encoding));
-#if DEBUG
-            if (encoder is MemoEncoder me2)
-            {
-                field.MemoIndex = me2.Index;
-            }
-#endif
+            var encoder = EncoderFactory.GetEncoder(field.Type);
+            var data = encoder.Decode(buffer, memoData, encoding);
+            //data?.ToString() == "             12"
+            Data.Add(data);
         }
     }
 
@@ -60,8 +53,8 @@ public class DbfRecord
     /// </summary>
     internal DbfRecord(List<DbfField> fields)
     {
-        this.fields = fields;
-        Data = new List<object>();
+        this.Fields = fields;
+        Data = [];
         foreach (var unused in fields)
         {
             Data.Add(null);
@@ -78,7 +71,7 @@ public class DbfRecord
     {
         get
         {
-            var index = fields.FindIndex(x => x.Name.Equals(name));
+            var index = Fields.FindIndex(x => x.Name.Equals(name));
             return index == -1 ? null : Data[index];
         }
     }
@@ -87,7 +80,7 @@ public class DbfRecord
     {
         get
         {
-            var index = fields.IndexOf(field);
+            var index = Fields.IndexOf(field);
             return index == -1 ? null : Data[index];
         }
     }
@@ -126,50 +119,30 @@ public class DbfRecord
         separator ??= DefaultSeparator;
         mask = (mask ?? DefaultMask).Replace("{name}", "{0}").Replace("{value}", "{1}");
 
-        return string.Join(separator, fields.Select(z => string.Format(mask, z.Name, this[z])));
+        return string.Join(separator, Fields.Select(z => string.Format(mask, z.Name, this[z])));
     }
 
+    // Updates the memo offset in the record for the specified field.
     public void SetMemoOffset(DbfField field, int offset)
     {
-        int index = fields.FindIndex(f => f.Name == field.Name);
+        var index = Fields.FindIndex(f => f.Name == field.Name);
         if (index < 0)
-            throw new KeyNotFoundException($"Il campo '{field.Name}' non esiste nel record.");
+            throw new KeyNotFoundException($"Field '{field.Name}' does not exist in the record.");
 
         Data[index] = offset;
     }
 
-    //internal void Write(BinaryWriter writer, Encoding encoding)
-    internal void Write(BinaryWriter writer, Encoding encoding, ref long? memoOffset, BinaryWriter fptWriter)
+    // Writes all fields to the DBF record. For memo fields, it writes the offset value
+    // as a string, padded to the field's defined length per xBASE specifications.
+    internal void Write(BinaryWriter writer, Encoding encoding)
     {
-        //// Write marker (always "not deleted")
-        //writer.Write((byte)0x20);
-        writer.Write(Marker);
+        /*
+        // Write marker (always "not deleted")
+        writer.Write((byte)0x20);
 
         var index = 0;
         foreach (var field in fields)
         {
-            #region MEMO
-            long currentMemoOffset;
-            if (field.Type == DbfFieldType.Memo)
-            {
-                memoOffset ??= MemoEncoder.BlockSize;
-
-                var memoString = this[field.Name]?.ToString();
-                if (!string.IsNullOrWhiteSpace(memoString))
-                {
-                    var memoDataLength = MemoEncoder.Instance.WriteMemo(field, memoString, encoding, memoOffset.Value, fptWriter);
-                    currentMemoOffset = memoOffset.Value / MemoEncoder.BlockSize;
-                    memoOffset += memoDataLength;
-                }
-                else
-                {
-                    currentMemoOffset = 0;
-                }
-
-                SetMemoOffset(field, (int)currentMemoOffset);
-            }
-            #endregion
-
             var encoder = EncoderFactory.GetEncoder(field.Type);
             var buffer = encoder.Encode(field, Data[index], encoding);
             if (buffer != null)
@@ -180,6 +153,56 @@ public class DbfRecord
                 }
 
                 writer.Write(buffer);
+            }
+            index++;
+        }
+        */
+
+        writer.Write(Marker);
+
+        //Data[1]?.ToString() == "             12"
+        var index = 0;
+        foreach (var field in Fields)
+        {
+            if (field.Type == DbfFieldType.Memo)
+            {
+                var offset = Convert.ToInt32(this[field.Name]);
+                if (offset == 0)
+                {
+                    writer.Write(BitConverter.GetBytes(offset));
+                }
+                else
+                {
+#if DEBUG
+                    writer.Write(BitConverter.GetBytes(offset));
+#else
+                    // Convert offset to string and pad it to the field length (assumes field.Length is defined)
+                    //var offsetStr = offset.ToString().PadLeft(field.Length);
+                    var offsetStr = offset.ToString().PadLeft(4);
+                    writer.Write(encoding.GetBytes(offsetStr));
+#endif
+                }
+            }
+            else
+            {
+#if DEBUG
+                    var encoder = EncoderFactory.GetEncoder(field.Type);
+                    var buffer = encoder.Encode(field, Data[index], encoding);
+                    if (buffer != null)
+                    {
+                        if (buffer.Length > field.Length)
+                        {
+                            throw new ArgumentOutOfRangeException(nameof(buffer.Length), buffer.Length, "Buffer length has exceeded length of the field.");
+                        }
+
+                        writer.Write(buffer);
+                    }
+#else
+                var encoder = EncoderFactory.GetEncoder(field.Type);
+                var value = this[field.Name];
+                var buffer = encoder.Encode(field, value, encoding);
+                writer.Write(buffer);
+#endif
             }
             index++;
         }
