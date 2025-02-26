@@ -85,6 +85,11 @@ public class DbfRecord
             var index = Fields.FindIndex(x => x.Name.Equals(name));
             return index == -1 ? null : Data[index];
         }
+        set
+        {
+            var index = Fields.FindIndex(x => x.Name.Equals(name));
+            Data[index] = value;
+        }
     }
 
     public object this[DbfField field]
