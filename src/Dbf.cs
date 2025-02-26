@@ -27,6 +27,8 @@ public class Dbf
     public byte Flag => _header?.Flag ?? DefaultFlag;
     public byte Codepage => _header?.Codepage ?? DefaultCodepage;
 
+    public bool WriteEOF { get; set; } = false;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="Dbf" />.
     /// </summary>
@@ -333,10 +335,11 @@ public class Dbf
             record.Write(writer, Encoding);
         }
 
-#if !DEBUG
-        // Write EOF character.
-        writer.Write((byte) 0x1a);
-#endif
+        if (WriteEOF)
+        {
+            // Write EOF character.
+            writer.Write((byte) 0x1a);
+        }
     }
 
     private static string GetMemoPath(string basePath)

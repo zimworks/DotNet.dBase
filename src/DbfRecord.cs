@@ -83,12 +83,16 @@ public class DbfRecord
         get
         {
             var index = Fields.FindIndex(x => x.Name.Equals(name));
-            return index == -1 ? null : Data[index];
+            return index == -1 ? null : Data.ElementAtOrDefault(index);
         }
         set
         {
             var index = Fields.FindIndex(x => x.Name.Equals(name));
-            Data[index] = value;
+            if (index == -1) return;
+            if (index > Data.Count - 1)
+                Data.Insert(index, value);
+            else
+                Data[index] = value;
         }
     }
 
@@ -97,7 +101,7 @@ public class DbfRecord
         get
         {
             var index = Fields.IndexOf(field);
-            return index == -1 ? null : Data[index];
+            return index == -1 ? null : Data.ElementAtOrDefault(index);
         }
     }
 
