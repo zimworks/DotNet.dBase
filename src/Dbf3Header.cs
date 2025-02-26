@@ -22,10 +22,7 @@ public class Dbf3Header : DbfHeader
 
     internal override void Write(BinaryWriter writer, List<DbfField> fields, List<DbfRecord> records)
     {
-        LastUpdate = DateTime.Now;
-#if DEBUG
-        LastUpdate = new DateTime(1921, 10, 8);
-#endif
+        //LastUpdate = DateTime.Now;
         // Header length = header fields (32bytes)
         //               + 32 bytes for each field
         //               + field descriptor array terminator (1 byte)

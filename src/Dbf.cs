@@ -14,24 +14,25 @@ using System.Text;
 /// </summary>
 public class Dbf
 {
-    private DbfHeader header;
-    private FptHeader fptHeader;
+    private DbfHeader _header;
+    private FptHeader _fptHeader;
 
     public const DbfVersion DefaultVersion = DbfVersion.VisualFoxPro;
     public const byte DefaultFlag = (byte)FoxProFlag.WithMemo;
     public const byte DefaultCodepage = (byte)FoxProCodepage.DOS_Multilingual;
     public const string DefaultEncodingName = "ibm850";
 
-    public DbfVersion Version => header?.Version ?? DefaultVersion;
-    public byte Flag => header?.Flag ?? DefaultFlag;
-    public byte Codepage => header?.Codepage ?? DefaultCodepage;
+    public DbfVersion Version => _header?.Version ?? DefaultVersion;
+    public DateTime LastUpdate => _header?.LastUpdate ?? DateTime.Today;
+    public byte Flag => _header?.Flag ?? DefaultFlag;
+    public byte Codepage => _header?.Codepage ?? DefaultCodepage;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Dbf" />.
     /// </summary>
     public Dbf()
     {
-        header = DbfHeader.CreateHeader(DbfVersion.FoxBaseDBase3NoMemo);
+        _header = DbfHeader.CreateHeader(DbfVersion.FoxBaseDBase3NoMemo);
         Fields = [];
         Records = [];
     }
@@ -116,7 +117,7 @@ public class Dbf
             using var fptStream = File.Open(fptPath, FileMode.Open, FileAccess.Read,  FileShare.Read);
             fptStream.Seek(0, SeekOrigin.Begin);
             using var fptReader = new BinaryReader(fptStream, Encoding);
-            fptHeader = FptHeader.Read(fptReader);
+            _fptHeader = FptHeader.Read(fptReader);
         }
 
         dbfStream.Seek(0, SeekOrigin.Begin);
@@ -126,7 +127,7 @@ public class Dbf
 
         // After reading the fields, we move the read pointer to the beginning
         // of the records, as indicated by the "HeaderLength" value in the header.
-        dbfStream.Seek(header.HeaderLength, SeekOrigin.Begin);
+        dbfStream.Seek(_header.HeaderLength, SeekOrigin.Begin);
         byte[] fptBytes;
         if (fptPath != null)
         {
@@ -145,18 +146,21 @@ public class Dbf
     /// </summary>
     /// <param name="path">The file to read.</param>
     /// <param name="version">The version <see cref="DbfVersion" />. If unknown specified, use current header version.</param>
+    /// <param name="lastUpdate"></param>
     /// <param name="flag"></param>
     /// <param name="codepage"></param>
     public void Write(string path, DbfVersion version = DbfVersion.VisualFoxPro
+        , DateTime lastUpdate = default
         , byte flag = DefaultFlag, byte codepage = DefaultCodepage
     )
     {
         if (version != DbfVersion.Unknown)
         {
-            header.Version = version;
-            header = DbfHeader.CreateHeader(header.Version);
-            header.Flag = flag;
-            header.Codepage = codepage;
+            _header.Version = version;
+            _header = DbfHeader.CreateHeader(_header.Version);
+            _header.LastUpdate = lastUpdate;
+            _header.Flag = flag;
+            _header.Codepage = codepage;
         }
 
         using var stream = File.Open(path, FileMode.Create, FileAccess.Write);
@@ -172,8 +176,8 @@ public class Dbf
     {
         if (version != DbfVersion.Unknown)
         {
-            header.Version = version;
-            header = DbfHeader.CreateHeader(header.Version);
+            _header.Version = version;
+            _header = DbfHeader.CreateHeader(_header.Version);
         }
 
         Write(stream, true);
@@ -183,7 +187,7 @@ public class Dbf
     private void Write(Stream stream, bool leaveOpen)
     {
         using var writer = new BinaryWriter(stream, Encoding, leaveOpen);
-        header.Write(writer, Fields, Records);
+        _header.Write(writer, Fields, Records);
         WriteFields(writer);
 
         // Prepare the FPT file using the same base path as the DBF file.
@@ -192,11 +196,11 @@ public class Dbf
         using var fptWriter = new BinaryWriter(fptStream, Encoding);
 
         // Initialize the FPT header per Alaska's spec.
-        fptHeader ??= new FptHeader();
-        fptHeader.Write(fptWriter);
+        _fptHeader ??= new FptHeader();
+        _fptHeader.Write(fptWriter);
 
         // Start writing memo data immediately after the header block.
-        long memoOffset = fptHeader.HeaderSize;
+        long memoOffset = _fptHeader.HeaderSize;
 
         foreach (var record in Records)
         {
@@ -262,8 +266,8 @@ public class Dbf
         var versionByte = reader.ReadByte();
         reader.BaseStream.Seek(0, SeekOrigin.Begin);
         var version = (DbfVersion) versionByte;
-        header = DbfHeader.CreateHeader(version);
-        header.Read(reader);
+        _header = DbfHeader.CreateHeader(version);
+        _header.Read(reader);
     }
 
     private void ReadFields(BinaryReader reader)
@@ -289,7 +293,7 @@ public class Dbf
         {
             try
             {
-                Records.Add(new DbfRecord(reader, header, Fields, memoData, Encoding));
+                Records.Add(new DbfRecord(reader, _header, Fields, memoData, Encoding));
             }
             catch (EndOfStreamException)
             {

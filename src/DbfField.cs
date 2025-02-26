@@ -7,7 +7,7 @@ namespace dBASE.NET;
 /// </summary>
 public class DbfField : IEquatable<DbfField>
 {
-    private string defaultValue;
+    private string _defaultValue;
 
     /// <summary>
     /// Field name
@@ -41,7 +41,7 @@ public class DbfField : IEquatable<DbfField>
     /// <summary>
     /// Default value to write.
     /// </summary>
-    internal string DefaultValue => defaultValue ??= new string(' ', Length);
+    internal string DefaultValue => _defaultValue ??= new string(' ', Length);
 #pragma warning disable 1591
     public DbfField(string name, DbfFieldType type, byte length, byte precision = 0)
     {
