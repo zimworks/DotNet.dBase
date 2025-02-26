@@ -149,24 +149,25 @@ public class Dbf
     /// <param name="lastUpdate"></param>
     /// <param name="flag"></param>
     /// <param name="codepage"></param>
-    public void Write(string path, DbfVersion version = DbfVersion.VisualFoxPro
-        , DateTime lastUpdate = default
-        , byte flag = DefaultFlag, byte codepage = DefaultCodepage
+    /// <param name="overwriteHeader"></param>
+    public void Write(string path, DbfVersion? version = null, DateTime? lastUpdate = null
+        , byte? flag = null, byte? codepage = null, bool overwriteHeader = false
     )
     {
-        if (version != DbfVersion.Unknown)
+        if (overwriteHeader)
         {
-            _header.Version = version;
+            _header.Version = version ?? Version;
             _header = DbfHeader.CreateHeader(_header.Version);
-            _header.LastUpdate = lastUpdate;
-            _header.Flag = flag;
-            _header.Codepage = codepage;
+            _header.LastUpdate = lastUpdate ?? LastUpdate;
+            _header.Flag = flag ?? Flag;
+            _header.Codepage = codepage ?? Codepage;
         }
 
         using var stream = File.Open(path, FileMode.Create, FileAccess.Write);
         Write(stream, false);
     }
 
+    /*
     /// <summary>
     /// Writes the current instance to the specified stream.
     /// </summary>
@@ -182,65 +183,72 @@ public class Dbf
 
         Write(stream, true);
     }
+    */
 
     // Private Write method performs the combined DBF/FPT write.
-    private void Write(Stream stream, bool leaveOpen)
+    private void Write(Stream stream, bool leaveOpen = false, bool withMemo = false)
     {
         using var writer = new BinaryWriter(stream, Encoding, leaveOpen);
         _header.Write(writer, Fields, Records);
         WriteFields(writer);
 
-        // Prepare the FPT file using the same base path as the DBF file.
-        var fptPath = GetMemoPath(((FileStream)stream).Name, true);
-        using var fptStream = new FileStream(fptPath, FileMode.Create, FileAccess.Write);
-        using var fptWriter = new BinaryWriter(fptStream, Encoding);
-
-        // Initialize the FPT header per Alaska's spec.
-        _fptHeader ??= new FptHeader();
-        _fptHeader.Write(fptWriter);
-
-        // Start writing memo data immediately after the header block.
-        long memoOffset = _fptHeader.HeaderSize;
-
-        foreach (var record in Records)
+        if (withMemo)
         {
-            foreach (var field in Fields)
-            {
-                if (field.Type == DbfFieldType.Memo)
-                {
-                    var value = record[field.Name, true];
+            // Prepare the FPT file using the same base path as the DBF file.
+            var fptPath = GetMemoPath(((FileStream)stream).Name);
+            using var fptStream = new FileStream(fptPath, FileMode.Create, FileAccess.Write);
+            using var fptWriter = new BinaryWriter(fptStream, Encoding);
+
+            // Initialize the FPT header per Alaska's spec.
+            _fptHeader ??= new FptHeader();
+            _fptHeader.Write(fptWriter);
 
 #if DEBUG
-                    var encoder = MemoEncoder.Instance;
-                    var memoData = encoder.Encode(field, value, Encoding);
-
-                    var offset = (int)record[field.Name];
-                    if (offset > 0)
-                    {
-                        var start = offset * MemoEncoder.BlockSize;
-                        fptWriter.Seek(start, SeekOrigin.Begin);
-                        fptWriter.Write(memoData);
-                    }
 #else
-                    if (string.IsNullOrEmpty(value?.ToString())) // Null/empty memo fields have a null (zero) offset!
+            // Start writing memo data immediately after the header block.
+            long memoOffset = _fptHeader.HeaderSize;
+#endif
+
+            foreach (var record in Records)
+            {
+                foreach (var field in Fields)
+                {
+                    if (field.Type == DbfFieldType.Memo)
                     {
-                        record.SetMemoOffset(field, 0);
-                    }
-                    else
-                    {
+                        var value = record[field.Name, true];
+
+#if DEBUG
                         var encoder = MemoEncoder.Instance;
                         var memoData = encoder.Encode(field, value, Encoding);
 
-                        //var currentMemoOffset = memoOffset / MemoEncoder.BlockSize;
-                        var currentMemoOffset = (memoOffset - fptHeader.HeaderSize + fptHeader.BlockSize) / fptHeader.BlockSize;
-                        record.SetMemoOffset(field, (int)currentMemoOffset);
+                        var offset = (int)record[field.Name];
+                        if (offset > 0)
+                        {
+                            var start = offset * MemoEncoder.BlockSize;
+                            fptWriter.Seek(start, SeekOrigin.Begin);
+                            fptWriter.Write(memoData);
+                        }
+#else
+                        if (string.IsNullOrEmpty(value?.ToString())) // Null/empty memo fields have a null (zero) offset!
+                        {
+                            record.SetMemoOffset(field, 0);
+                        }
+                        else
+                        {
+                            var encoder = MemoEncoder.Instance;
+                            var memoData = encoder.Encode(field, value, Encoding);
 
-                        fptWriter.Seek((int)memoOffset, SeekOrigin.Begin);
-                        fptWriter.Write(memoData);
+                            //var currentMemoOffset = memoOffset / MemoEncoder.BlockSize;
+                            var currentMemoOffset = (memoOffset - fptHeader.HeaderSize + fptHeader.BlockSize) / fptHeader.BlockSize;
+                            record.SetMemoOffset(field, (int)currentMemoOffset);
 
-                        memoOffset += memoData.Length;
-                    }
+                            fptWriter.Seek((int)memoOffset, SeekOrigin.Begin);
+                            fptWriter.Write(memoData);
+
+                            memoOffset += memoData.Length;
+                        }
 #endif
+                    }
                 }
             }
         }
@@ -331,10 +339,10 @@ public class Dbf
 #endif
     }
 
-    private static string GetMemoPath(string basePath, bool forceFpt = false)
+    private static string GetMemoPath(string basePath)
     {
         var memoPath = Path.ChangeExtension(basePath, "fpt");
-        if (forceFpt || File.Exists(memoPath))
+        if (File.Exists(memoPath))
         {
             return memoPath;
         }
