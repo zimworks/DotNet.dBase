@@ -82,7 +82,7 @@ public class Dbf
     public void Read(string path)
     {
         // Open stream for reading.
-        using var baseStream = File.Open(path, FileMode.Open, FileAccess.Read,  FileShare.Read);
+        using var baseStream = File.Open(path, FileMode.Open, FileAccess.Read,  FileShare.ReadWrite);
         var fptPath = GetMemoPath(path);
         if (fptPath == null)
         {
@@ -90,8 +90,6 @@ public class Dbf
             return;
         }
 
-        //using var fptStream = File.Open(memoPath, FileMode.Open, FileAccess.Read,  FileShare.Read);
-        //Read(baseStream, fptStream);
         Read(baseStream, fptPath);
     }
 
@@ -116,7 +114,7 @@ public class Dbf
 
         if (fptPath != null)
         {
-            using var fptStream = File.Open(fptPath, FileMode.Open, FileAccess.Read,  FileShare.Read);
+            using var fptStream = File.Open(fptPath, FileMode.Open, FileAccess.Read,  FileShare.ReadWrite);
             fptStream.Seek(0, SeekOrigin.Begin);
             using var fptReader = new BinaryReader(fptStream, Encoding);
             _fptHeader = FptHeader.Read(fptReader);
@@ -133,7 +131,7 @@ public class Dbf
         byte[] fptBytes;
         if (fptPath != null)
         {
-            using var fptStream = File.Open(fptPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using var fptStream = File.Open(fptPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             fptBytes = ReadMemos(fptStream);
         }
         else
@@ -165,7 +163,7 @@ public class Dbf
             _header.Codepage = codepage ?? Codepage;
         }
 
-        using var stream = File.Open(path, FileMode.Create, FileAccess.Write);
+        using var stream = File.Open(path, FileMode.Create, FileAccess.Write, FileShare.Read);
         Write(stream, false);
     }
 
@@ -198,7 +196,7 @@ public class Dbf
         {
             // Prepare the FPT file using the same base path as the DBF file.
             var fptPath = GetMemoPath(((FileStream)stream).Name);
-            using var fptStream = new FileStream(fptPath, FileMode.Create, FileAccess.Write);
+            using var fptStream = new FileStream(fptPath, FileMode.Create, FileAccess.Write, FileShare.Read);
             using var fptWriter = new BinaryWriter(fptStream, Encoding);
 
             // Initialize the FPT header per Alaska's spec.
