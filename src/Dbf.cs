@@ -163,7 +163,7 @@ public class Dbf
             _header.Codepage = codepage ?? Codepage;
         }
 
-        using var stream = File.Open(path, FileMode.Create, FileAccess.Write, FileShare.Read);
+        using var stream = File.Open(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite);
         Write(stream, false);
     }
 
