@@ -17,6 +17,9 @@ public class Dbf
     private DbfHeader _header;
     private FptHeader _fptHeader;
 
+    public const FileShare DefaultReadShare = FileShare.ReadWrite;
+    public const FileShare DefaultWriteShare = FileShare.Write;
+
     public const DbfVersion DefaultVersion = DbfVersion.VisualFoxPro;
     public const byte DefaultFlag = (byte)FoxProFlag.WithMemo;
     public const byte DefaultCodepage = (byte)FoxProCodepage.DOS_Multilingual;
@@ -79,18 +82,15 @@ public class Dbf
     /// Opens a DBF file, reads the contents that initialize the current instance, and then closes the file.
     /// </summary>
     /// <param name="path">The file to read.</param>
-    public void Read(string path)
+    /// <param name="withMemo"></param>
+    public void Read(string path, FileShare fileShare = DefaultReadShare, bool withMemo = false)
     {
         // Open stream for reading.
-        using var baseStream = File.Open(path, FileMode.Open, FileAccess.Read,  FileShare.ReadWrite);
-        var fptPath = GetMemoPath(path);
-        if (fptPath == null)
-        {
-            Read(baseStream);
-            return;
-        }
+        using var dbfStream = File.Open(path, FileMode.Open, FileAccess.Read, fileShare);
+        var fptPath = withMemo ? GetMemoPath(path) : null;
 
-        Read(baseStream, fptPath);
+        Read(dbfStream, fptPath);
+        dbfStream.Close();
     }
 
     /// <summary>
@@ -112,18 +112,10 @@ public class Dbf
             throw new InvalidOperationException("The stream must provide positioning (support Seek method).");
         }
 
-        if (fptPath != null)
-        {
-            using var fptStream = File.Open(fptPath, FileMode.Open, FileAccess.Read,  FileShare.ReadWrite);
-            fptStream.Seek(0, SeekOrigin.Begin);
-            using var fptReader = new BinaryReader(fptStream, Encoding);
-            _fptHeader = FptHeader.Read(fptReader);
-        }
-
         dbfStream.Seek(0, SeekOrigin.Begin);
-        using var reader = new BinaryReader(dbfStream, Encoding);
-        ReadHeader(reader);
-        ReadFields(reader);
+        using var dbfReader = new BinaryReader(dbfStream, Encoding, false);
+        ReadHeader(dbfReader);
+        ReadFields(dbfReader);
 
         // After reading the fields, we move the read pointer to the beginning
         // of the records, as indicated by the "HeaderLength" value in the header.
@@ -131,26 +123,34 @@ public class Dbf
         byte[] fptBytes;
         if (fptPath != null)
         {
-            using var fptStream = File.Open(fptPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var fptStream = File.Open(fptPath, FileMode.Open, FileAccess.Read, DefaultReadShare);
+            fptStream.Seek(0, SeekOrigin.Begin);
+            using var fptReader = new BinaryReader(fptStream, Encoding, false);
+            _fptHeader = FptHeader.Read(fptReader);
+            fptStream.Position = 0;
             fptBytes = ReadMemos(fptStream);
+            fptStream.Close();
         }
         else
         {
             fptBytes = null;
         }
-        ReadRecords(reader, fptBytes);
+
+        ReadRecords(dbfReader, fptBytes);
     }
 
     /// <summary>
     /// Creates a new file, writes the current instance to the file, and then closes the file. If the target file already exists, it is overwritten.
     /// </summary>
     /// <param name="path">The file to read.</param>
+    /// <param name="fileShare"></param>
     /// <param name="version">The version <see cref="DbfVersion" />. If unknown specified, use current header version.</param>
     /// <param name="lastUpdate"></param>
     /// <param name="flag"></param>
     /// <param name="codepage"></param>
     /// <param name="overwriteHeader"></param>
-    public void Write(string path, DbfVersion? version = null, DateTime? lastUpdate = null
+    public void Write(string path, FileShare? fileShare = null
+        , DbfVersion? version = null, DateTime? lastUpdate = null
         , byte? flag = null, byte? codepage = null, bool overwriteHeader = false
     )
     {
@@ -163,8 +163,10 @@ public class Dbf
             _header.Codepage = codepage ?? Codepage;
         }
 
-        using var stream = File.Open(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite);
+        fileShare ??= DefaultWriteShare;
+        using var stream = File.Open(path, FileMode.Open, FileAccess.Write, fileShare.Value);
         Write(stream, false);
+        stream.Close();
     }
 
     /*
@@ -203,8 +205,7 @@ public class Dbf
             _fptHeader ??= new FptHeader();
             _fptHeader.Write(fptWriter);
 
-#if DEBUG
-#else
+#if DBT
             // Start writing memo data immediately after the header block.
             long memoOffset = _fptHeader.HeaderSize;
 #endif
@@ -217,18 +218,7 @@ public class Dbf
                     {
                         var value = record[field.Name, true];
 
-#if DEBUG
-                        var encoder = MemoEncoder.Instance;
-                        var memoData = encoder.Encode(field, value, Encoding);
-
-                        var offset = (int)record[field.Name];
-                        if (offset > 0)
-                        {
-                            var start = offset * MemoEncoder.BlockSize;
-                            fptWriter.Seek(start, SeekOrigin.Begin);
-                            fptWriter.Write(memoData);
-                        }
-#else
+#if DBT
                         if (string.IsNullOrEmpty(value?.ToString())) // Null/empty memo fields have a null (zero) offset!
                         {
                             record.SetMemoOffset(field, 0);
@@ -239,13 +229,24 @@ public class Dbf
                             var memoData = encoder.Encode(field, value, Encoding);
 
                             //var currentMemoOffset = memoOffset / MemoEncoder.BlockSize;
-                            var currentMemoOffset = (memoOffset - fptHeader.HeaderSize + fptHeader.BlockSize) / fptHeader.BlockSize;
+                            var currentMemoOffset = (memoOffset - _fptHeader.HeaderSize + _fptHeader.BlockSize) / _fptHeader.BlockSize;
                             record.SetMemoOffset(field, (int)currentMemoOffset);
 
                             fptWriter.Seek((int)memoOffset, SeekOrigin.Begin);
                             fptWriter.Write(memoData);
 
                             memoOffset += memoData.Length;
+                        }
+#else
+                        var encoder = MemoEncoder.Instance;
+                        var memoData = encoder.Encode(field, value, Encoding);
+
+                        var offset = (int)record[field.Name];
+                        if (offset > 0)
+                        {
+                            var start = offset * MemoEncoder.BlockSize;
+                            fptWriter.Seek(start, SeekOrigin.Begin);
+                            fptWriter.Write(memoData);
                         }
 #endif
                     }

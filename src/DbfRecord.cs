@@ -30,9 +30,6 @@ public class DbfRecord
         var row = reader.ReadBytes(header.RecordLength - 1);
         if (row.Length == 0)
             throw new EndOfStreamException();
-#if DEBUG
-        //if (Marker == (int)DbfRecordMarker.Deleted) return;
-#endif
 
         // Read data for each field.
         var offset = 0;
@@ -45,7 +42,7 @@ public class DbfRecord
 
             var encoder = EncoderFactory.GetEncoder(field.Type);
             var data = encoder.Decode(buffer, memoData, encoding);
-            //data?.ToString() == "             12"
+
             if (field.Type == DbfFieldType.Memo)
             {
                 Data.Add(BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(0, 4)));
@@ -153,6 +150,7 @@ public class DbfRecord
         return string.Join(separator, Fields.Select(z => string.Format(mask, z.Name, this[z])));
     }
 
+#if DBT
     // Updates the memo offset in the record for the specified field.
     public void SetMemoOffset(DbfField field, int offset)
     {
@@ -162,12 +160,13 @@ public class DbfRecord
 
         Data[index] = offset;
     }
+#endif
 
     // Writes all fields to the DBF record. For memo fields, it writes the offset value
     // as a string, padded to the field's defined length per xBASE specifications.
     internal void Write(BinaryWriter writer, Encoding encoding)
     {
-        /*
+        /* original new-only dbf implementation
         // Write marker (always "not deleted")
         writer.Write((byte)0x20);
 
@@ -191,43 +190,32 @@ public class DbfRecord
 
         writer.Write(Marker);
 
-        //Data[1]?.ToString() == "             12"
-        var index = 0;
         foreach (var field in Fields)
         {
             if (field.Type == DbfFieldType.Memo)
             {
-                // this is DBF+DBT bBASE spec, not DBF+FPT !
-                // var offsetValue = this[field.Name];
-                // var offsetStr = offsetValue.ToString().PadLeft(field.Length);
-                // writer.Write(encoding.GetBytes(offsetStr));
-
-                // this respects DBF+FPT spec
+#if DBT
+                // original DBF+DBT implementation
+                 var offsetValue = this[field.Name];
+                 var offsetStr = offsetValue.ToString().PadLeft(field.Length);
+                 writer.Write(encoding.GetBytes(offsetStr));
+#else
+                // DBF+FPT implementation
                 var offset = Convert.ToInt32(this[field.Name]);
                 writer.Write(BitConverter.GetBytes(offset));
+#endif
             }
             else
             {
-#if !DEBUG
-                    var encoder = EncoderFactory.GetEncoder(field.Type);
-                    var buffer = encoder.Encode(field, Data[index], encoding);
-                    if (buffer != null)
-                    {
-                        if (buffer.Length > field.Length)
-                        {
-                            throw new ArgumentOutOfRangeException(nameof(buffer.Length), buffer.Length, "Buffer length has exceeded length of the field.");
-                        }
-
-                        writer.Write(buffer);
-                    }
-#else
                 var value = this[field.Name];
                 var encoder = EncoderFactory.GetEncoder(field.Type);
                 var buffer = encoder.Encode(field, value, encoding);
+                if (buffer.Length > field.Length)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(buffer.Length), buffer.Length, "Buffer length has exceeded length of the field.");
+                }
                 writer.Write(buffer);
-#endif
             }
-            index++;
         }
     }
 }

@@ -55,6 +55,11 @@ internal class MemoEncoder : IEncoder
             return null; // No memo data.
         }
 
+        if (memoData == null)
+        {
+            return null; // No memo read.
+        }
+
         var start = offset * BlockSize;
         if (start + 8 > memoData.Length)
         {
