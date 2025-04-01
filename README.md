@@ -1,10 +1,10 @@
-﻿# AdeoTEK dBASE.NET
+﻿# ZimWorks dBASE.NET
 
-[![.NET](https://github.com/adeotek/DotNet.dBase/actions/workflows/dotnet.yml/badge.svg?branch=main)](https://github.com/adeotek/DotNet.dBase/actions/workflows/dotnet.yml)
+[![.NET](https://github.com/zimworks/DotNet.dBase/actions/workflows/dotnet.yml/badge.svg?branch=main)](https://github.com/zimworks/DotNet.dBase/actions/workflows/dotnet.yml)
 
 ## Read and write DBF files with .NET
 
-__Adeotek.dBASE.NET__ is a .NET (`netstandard2.1`) class library used to read FoxBase, dBASE III and dBASE IV .dbf files. Data read
+__ZimWorks.dBASE.NET__ is a .NET (`netstandard2.1`) class library used to read FoxBase, dBASE III and dBASE IV .dbf files. Data read
 from a file is returned as a list of typed fields and a list of records. This library is useful to add
 data import from dBASE sources to a .NET project.
 
@@ -14,26 +14,26 @@ may be added to it over time.
 
 There is [an article describing the dBASE file format](http://www.independent-software.com/dbase-dbf-dbt-file-format.html).
 
-## Installing AdeoTEK dBASE.NET
+## Installing ZimWorks dBASE.NET
 
-AdeoTEK dBASE.NET is available from [nuget](https://www.nuget.org/packages/Adeotek.dBASE.NET/):
+ZimWorks dBASE.NET is available from [nuget](https://www.nuget.org/packages/ZimWorks.dBASE.NET/):
 
 * Package manager:
 
 ```
-PM> Install-Package Adeotek.dBASE.NET
+PM> Install-Package ZimWorks.dBASE.NET
 ```
 
 * .NET CLI:
 
 ```
-> dotnet add package Adeotek.dBASE.NET
+> dotnet add package ZimWorks.dBASE.NET
 ```
 
 * Paket CLI:
 
 ```
-> paket add Adeotek.dBASE.NET
+> paket add ZimWorks.dBASE.NET
 ```
 
 ## Opening a DBF file
@@ -127,5 +127,9 @@ http://yuml.me/diagram/scruffy/class/edit/[Dbf]+->[DbfRecord], [Dbf]+->[DbfField
 
 
 ## Credits
+
+This project was forked from [dBASE.NET](https://github.com/adeotek/DotNet.dBase) by [AdeoTEK Software SRL](https://adeotek.com/), but due to lack of features and maintenance was migrated to a stand-alone repository.
+
+## Original credits
 
 This project was initially forked from [dBASE.NET](https://github.com/henck/dBASE.NET) by [Independent Software](http://www.independent-software.com/), but at some point was migrated to a stand-alone repository.

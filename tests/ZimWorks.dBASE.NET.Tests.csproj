@@ -22,7 +22,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\src\Adeotek.dBASE.NET.csproj" />
+      <ProjectReference Include="..\src\ZimWorks.dBASE.NET.csproj" />
     </ItemGroup>
 
     <PropertyGroup>
@@ -30,11 +30,11 @@
     </PropertyGroup>
 
     <PropertyGroup>
-        <AssemblyOriginatorKeyFile>Adeotek.dBASE.NET.Tests.snk</AssemblyOriginatorKeyFile>
+        <AssemblyOriginatorKeyFile>ZimWorks.dBASE.NET.Tests.snk</AssemblyOriginatorKeyFile>
     </PropertyGroup>
 
     <ItemGroup>
-        <None Include="Adeotek.dBASE.NET.Tests.snk" />
+        <None Include="ZimWorks.dBASE.NET.Tests.snk" />
     </ItemGroup>
 
     <ItemGroup>
