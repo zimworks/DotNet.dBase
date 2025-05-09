@@ -2,8 +2,6 @@
 
 using Encoders;
 using System;
-using System.Buffers.Binary;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -18,7 +16,7 @@ public class Dbf
     private FptHeader _fptHeader;
 
     public const FileShare DefaultReadShare = FileShare.ReadWrite;
-    public const FileShare DefaultWriteShare = FileShare.Write;
+    public const FileShare DefaultWriteShare = FileShare.ReadWrite;
 
     public const DbfVersion DefaultVersion = DbfVersion.VisualFoxPro;
     public const byte DefaultFlag = (byte)FoxProFlag.WithMemo;
